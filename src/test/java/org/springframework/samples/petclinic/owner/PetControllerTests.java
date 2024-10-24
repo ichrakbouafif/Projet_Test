@@ -20,19 +20,22 @@ import org.assertj.core.util.Lists;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledInNativeImage;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.aot.DisabledInAotMode;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.ui.ModelMap;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import static org.junit.Assert.assertEquals;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -81,6 +84,9 @@ class PetControllerTests {
 		owner.addPet(pet);
 		pet.setId(TEST_PET_ID);
 		given(this.owners.findById(TEST_OWNER_ID)).willReturn(owner);
+
+		///////
+
 	}
 
 	@Test
@@ -382,5 +388,87 @@ class PetControllerTests {
 			.andExpect(status().isOk())
 			.andExpect(view().name("pets/createOrUpdatePetForm"));
 	}
+	//////////////////////////////
 
+	@Test
+	void testProcessCreationFormHasFutureBirthDateError() throws Exception {
+		mockMvc
+			.perform(post("/owners/{ownerId}/pets/new", TEST_OWNER_ID).param("name", "Lucky")
+				.param("type", "hamster")
+				.param("birthDate", "2100-01-01")) // future date
+			.andExpect(model().attributeHasErrors("pet"))
+			.andExpect(model().attributeHasFieldErrors("pet", "birthDate"))
+			.andExpect(status().isOk())
+			.andExpect(view().name(VIEWS_PETS_CREATE_OR_UPDATE_FORM));
+	}
+
+	@Test
+	void testFindPetReturnsNewPet() {
+		Pet result = new PetController(this.owners).findPet(TEST_OWNER_ID, null);
+
+		// Assert that a new pet is returned
+		assertThat(result).isNotNull();
+		assertThat(result.isNew()).isTrue();
+	}
+
+	private PetController petController;
+
+	@Test
+	void testProcessUpdateFormWithNullOwnerThrowsException() {
+		// Arrange
+		int ownerId = 1; // Example owner ID
+		int petId = TEST_PET_ID;
+
+		// Mock the owner repository to return null when the owner is looked up
+		when(this.owners.findById(ownerId)).thenReturn(null);
+
+		// Create a pet instance to pass to the method
+		Pet pet = new Pet();
+		pet.setId(petId);
+		pet.setName("Buddy");
+
+		// Mock the BindingResult
+		BindingResult result = mock(BindingResult.class);
+		ModelMap model = mock(ModelMap.class);
+		RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+		// Act & Assert
+		assertThrows(NullPointerException.class, () -> {
+			petController.processUpdateForm(pet, result, null, model, redirectAttributes);
+		});
+	}
+
+	@Test
+	void testFindPetThrowsExceptionWhenOwnerNotFound() {
+		// Arrange: Simulate that the owner with the given ID is not found
+		given(owners.findById(TEST_OWNER_ID)).willReturn(null);
+
+		// Act & Assert: Verify that an IllegalArgumentException is thrown
+		IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () -> {
+			new PetController(this.owners).findPet(TEST_OWNER_ID, TEST_PET_ID);
+		});
+
+		// Assert that the exception message is as expected
+		assertEquals("Owner ID not found: " + TEST_OWNER_ID, thrown.getMessage());
+	}
+
+	@Test
+	void shouldReturnViewWhenOwnerFound() throws Exception {
+		// Arrange
+		int ownerId = 1;
+		Owner owner = new Owner();
+		owner.setId(ownerId);
+		when(owners.findById(ownerId)).thenReturn(owner); // Mocking to return a valid
+															// owner
+
+		// Act & Assert
+		mockMvc.perform(get("/owners/{ownerId}/pets/new", ownerId).accept(MediaType.TEXT_HTML))
+			.andExpect(status().isOk());
+
+	}
+
+	///////////////////
+
+	
 }
+
